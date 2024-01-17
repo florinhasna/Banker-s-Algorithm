@@ -38,6 +38,51 @@ calculate_need() {
 	done
 }
 
+# CHECK SAFETY
+is_safe() {
+	local work=("${available[@]}")
+	local finish=()
+
+	for (( i=0;i<n;i++ ));
+	do
+		finish[i]=false;
+	done
+	
+	local flag=0
+	for (( i=0;i<n;i++ ));
+	do
+		for (( j=0;j<m;j++ ));
+		do
+			if [ "${finish[$i]}" == "false" ] && [ "${need[$i,$j]}" -le "${work[$j]}" ];
+			then
+				work[$j]=$(( work[j] + allocation[$i,$j] ))
+			else
+				flag=1
+			fi	
+		done
+
+		if [ $flag -eq 1 ];
+		then
+			echo "The new state after allocation is unsafe, exiting..."
+			exit 1
+		fi
+
+		finish[$i]=true
+	done
+
+	for (( i=0;i<n;i++ ));
+	do
+		if [ "${finish[$i]}" == "false" ];
+		then
+			echo "The new state after allocation is unsafe, exiting..."
+			exit 1
+		fi
+	done
+	
+	echo "The system is in a safe state, the request is granted."
+	return 0
+}
+
 # CHECKING IF IS POSSIBLE TO ALLOCATE OR NOT
 check_state() {
 	local p=$1 # p=process
@@ -48,7 +93,8 @@ check_state() {
 	do
 		if (( r[$i] > need[$p,$i] ));
 		then
-			return 1 #Request exceeds need
+			echo "The request is invalid. Requested resources are exceeding the need."
+			return
 		fi
 	done
 
@@ -57,139 +103,37 @@ check_state() {
 	do
 		if (( r[$i] > available[$i] ));
 		then
-			return 2 #Request exceeds available
+			echo "The request is invalid. Requested resources are exceeding the available resources."
+			return
 		fi
 	done
 
 	# CHECK IF THE NEW REQUEST IS IN SAFE STATE
 	for (( i=0;i<m;i++ ));
 	do
-		temp_available[$i]=$(( available[$i]-r[$i] ))
-		temp_allocated[$i]=$(( allocated[$p,$i]+r[$i] ))
-		temp_need[$i]=$(( need[$p,$i]-r[$i] ))
+		available[$i]=$(( available[$i]-r[$i] ))
+		allocated[$i]=$(( allocated[$p,$i]+r[$i] ))
+		need[$i]=$(( need[$p,$i]-r[$i] ))
 	done
 
-	# IF IS UNSAFE, RETURN ERROR MESSAGE 3
-	if  (( check_safety == 1));
-	then
-		return 3 # Unsafe state
-	fi
-
-	# IF IS POSSIBLE, SYSTEM IS IN SAFE STATE, ALLOCATE
-	for(( i=0;i<m;i++ ));
-	do
-		available[$i]=${temp_available[$i]}
-		allocated[$p,$i]=${temp_allocated[$i]}
-		need[$p,$i]=${temp_need[$i]}
-	done
-
-	return 0 #request granted
-}
-
-check_safety(){
-	local work=("${available[@]}")
-	local finish=()
-
-	for(( i=0;i<n;i++ ));
-	do
-		finish[$i]=0
-	done
-
-	for(( i=0;i<n;i++ ));
-	do
-		if (( finish[$i] == 0 ));
-		then
-			local can_allocate=1
-			for(( j=0;j<m;j++ ));
-			do
-				if (( need[$i,$j] > work[$j] ));
-				then
-					can_allocate=0
-					break
-				fi
-			done
-
-			if (( can_allocate ));
-			then
-				finish[$i]=1
-				for(( j=0;j<m;j++ ));
-				do
-					work[$j]=$(( work[$j] + allocated[$i,$j] ));
-				done
-				i=-1 #restart loop
-			fi
-		fi
-	done
-
-	for(( i=0;i<m;i++ ));
-	do
-		if (( finish[$i] == 0 ));
-		then
-			return 1 #unsafe state
-		fi
-	done
-
-	return 0 # safe state
+	is_safe
 }
 
 # usage in practice
 calculate_need
 
-iterator=0
+# GET THE PROCESS AND ITS REQUEST
+read -p "Enter the process number(up to 4): " process_request
 
-# GET 5 PROCESSES AND THEIR REQUEST, CHECK ONE AT A TIME
-while (( $iterator<$n ));
-do
-	# GET THE PROCESS AND ITS REQUEST
-	read -p "Enter the process number(up to 4): " process_request
-	
-	if (( !(($process_request >= 0 && $process_request <= n)) ))
-	then
-		echo "Invalid input"
-		exit 1
-	fi	
+if (( !(( $process_request >= 0 && $process_request <= $n )) ))
+then
+	echo "Invalid input"
+	exit 1
+fi	
 
-	read -p "Enter the allocation of the process, three numbers separated by a space:  " first second third 
-	resource_request[0]=$first
-	resource_request[1]=$second
-	resource_request[2]=$third
+read -p "Enter the request of the process, three numbers separated by a space:  " first second third 
+resource_request[0]=$first
+resource_request[1]=$second
+resource_request[2]=$third
 
-	check_state $process_request ${resource_request[@]}
-	result=$?
-
-	# PRINT MESSAGE WHETHER IS GRANTED OR NOT
-	case $result in
-		0) echo "Request granted.";;
-		1) echo "Request denied, is exceeding need";;
-		2) echo "Request denied, exceed resources available";;
-		3) echo "Request denied, state in unsafe after granting request";;
-	esac
-
-	if (( $result != 0 ))
-	then
-		exit 1
-	fi
-
-	iterator=$(( $iterator + 1 ))
-done
-
-# PRINT AVAILABLE AND THE NEED
-echo "Available: ${available[@]}"
-echo "Allocated: "
-for (( i=0;i<n;i++ ));
-do
-	for (( j=0;j<n;j++ ));
-	do
-		echo "${allocated[$i,$j]}"
-	done
-done
-
-
-echo "Need:"
-for (( i=0;i<n;i++ ));
-do
-	for (( j=0;j<n;j++ ));
-	do
-		echo "${need[$i,$j]}"
-	done
-done
+check_state $process_request ${resource_request[@]}
